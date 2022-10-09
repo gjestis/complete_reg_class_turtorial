@@ -223,17 +223,87 @@ def test_corr(dtf, x, y, max_cat=20):
     return coeff,
 
 
+###############################################################################
+#                   MODEL DESIGN & TESTING - REGRESSION                       #
+###############################################################################
+
+def evaluate_regr_model(y_test, predicted, figsize=(25,5)):
+    ## Kpi
+    print("R2 (explained variance):", metrics.r2_score(y_test, predicted))
+    print("Mean Absolute Perc Error (Σ(|y-pred|/y)/n):", np.mean(np.abs((y_test-predicted)/predicted)))
+    print("Mean Absolute Error (Σ|y-pred|/n):", metrics.mean_absolute_error(y_test, predicted))
+    print("Root Mean Squared Error (sqrt(Σ(y-pred)^2/n)):", np.sqrt(metrics.mean_squared_error(y_test, predicted)))
+    print("Mean Squared Error Σ(y-pred)^2/n):", metrics.mean_squared_error(y_test, predicted))
+
+    ## residuals
+    residuals = y_test - predicted
+    max_error = max(residuals) if abs(max(residuals)) > abs(min(residuals)) else min(residuals)
+    max_idx = list(residuals).index(max(residuals)) if abs(max(residuals)) > abs(min(residuals)) else list(residuals).index(min(residuals))
+    max_true, max_pred = y_test[max_idx], predicted[max_idx]
+    print("Max Error:", "{:,.0f}".format(max_error))
+
+    ## Plot predicted vs true
+    fig, ax = plt.subplots(nrows=1, ncols=3, figsize=figsize)
+    from statsmodels.graphics.api import abline_plot
+    ax[0].scatter(predicted, y_test, color="black")
+    abline_plot(intercept=0, slope=1, color="red", ax=ax[0])
+    ax[0].vlines(x=max_pred, ymin=max_true, ymax=max_true-max_error, color='red', linestyle='--', alpha=0.7, label="max error")
+    ax[0].grid(True)
+    ax[0].set(xlabel="Predicted", ylabel="True", title="Predicted vs True")
+    ax[0].legend()
+
+    ## Plot predicted vs residuals
+    ax[1].scatter(predicted, residuals, color="red")
+    ax[1].vlines(x=max_pred, ymin=0, ymax=max_error, color='black', linestyle='--', alpha=0.7, label="max error")
+    ax[1].grid(True)
+    ax[1].set(xlabel="Predicted", ylabel="Residuals", title="Predicted vs Residuals")
+    ax[1].hlines(y=0, xmin=np.min(predicted), xmax=np.max(predicted))
+    ax[1].legend()
+
+    ## Plot residuals distribution
+    sns.distplot(residuals, color="red", hist=True, kde=True, kde_kws={"shade":True}, ax=ax[2], label="mean = "+"{:,.0f}".format(np.mean(residuals)))
+    ax[2].grid(True)
+    ax[2].set(yticks=[], yticklabels=[], title="Residuals distribution")
+    plt.show()
+
+
+###############################################################################
+#                  FEATURES SELECTION                                         #
+###############################################################################
+
+
+def features_importance(X, y, X_names, model=None, task="classification", figsize=(10,10)):
+    ## model
+    if model is None:
+        if task == "classification":
+            model = ensemble.GradientBoostingClassifier()
+        elif task == "regression":
+            model = ensemble.GradientBoostingRegressor()
+    model.fit(X,y)
+    print("--- model used ---")
+    print(model)
+
+    ## importance dtf
+    importances = model.feature_importances_
+    dtf_importances = pd.DataFrame({"IMPORTANCE":importances, "VARIABLE":X_names}).sort_values("IMPORTANCE", ascending=False)
+    dtf_importances['cumsum'] = dtf_importances['IMPORTANCE'].cumsum(axis=0)
+    dtf_importances = dtf_importances.set_index("VARIABLE")
+
+    ## plot
+    fig, ax = plt.subplots(nrows=1, ncols=2, sharex=False, sharey=False, figsize=figsize)
+    fig.suptitle("Features Importance", fontsize=20)
+    ax[0].title.set_text('variables')
+    dtf_importances[["IMPORTANCE"]].sort_values(by="IMPORTANCE").plot(kind="barh", legend=False, ax=ax[0]).grid(axis="x")
+    ax[0].set(ylabel="")
+    ax[1].title.set_text('cumulative')
+    dtf_importances[["cumsum"]].plot(kind="line", linewidth=4, legend=False, ax=ax[1])
+    ax[1].set(xlabel="", xticks=np.arange(len(dtf_importances)), xticklabels=dtf_importances.index)
+    plt.xticks(rotation=70)
+    plt.grid(axis='both')
+    plt.show()
+    return dtf_importances.reset_index()
 
 
 
 
 
-
-
-
-
-
-
-
-#
-#%%
