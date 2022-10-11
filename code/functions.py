@@ -160,12 +160,13 @@ def bivariate_plot(dtf, x, y, max_cat=20, figsize=(10,5)):
 
         ## cat vs cat --> hist count + hist %
         elif (utils_recognize_type(dtf, x, max_cat) == "cat") & (utils_recognize_type(dtf, y, max_cat) == "cat"):
-            fig, ax = plt.subplots(nrows=1, ncols=3,  sharex=False, sharey=False, figsize=figsize)
+            fig, ax = plt.subplots(nrows=1, ncols=2,  sharex=False, sharey=False, figsize=figsize)
             fig.suptitle(x+"   vs   "+y, fontsize=20)
             ### count
             ax[0].title.set_text('count')
             order = dtf.groupby(x)[y].count().index.tolist()
-            sns.catplot(x=x, hue=y, data=dtf, kind='count', order=order, ax=ax[0])
+            sns.countplot(x=x, hue=y, data=dtf, order=order, ax=ax[0])
+            #sns.catplot(x=x, hue=y, data=dtf, kind='count', order=order, ax=ax[0])
             ax[0].grid(True)
             ### percentage
             ax[1].title.set_text('percentage')
@@ -195,7 +196,7 @@ def bivariate_plot(dtf, x, y, max_cat=20, figsize=(10,5)):
             for i in sorted(dtf[cat].unique()):
                 sns.distplot(dtf[dtf[cat]==i][num], hist=False, label=i, ax=ax[0])
             ax[0].grid(True)
-            ax[0].legend(loc="upper right", title="OverAllQual groups")
+            ax[0].legend(loc="upper right", title=y)
             ### stacked
             dtf_noNan = dtf[dtf[num].notnull()]  #can't have nan
             ax[1].title.set_text('bins')
@@ -422,6 +423,7 @@ def features_importance(X, y, X_names, model=None, task="classification", figsiz
     plt.grid(axis='both')
     plt.show()
     return dtf_importances.reset_index()
+
 
 
 
