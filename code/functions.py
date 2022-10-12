@@ -166,17 +166,10 @@ def bivariate_plot(dtf, x, y, max_cat=20, figsize=(10,5)):
             ax[0].title.set_text('count')
             order = dtf.groupby(x)[y].count().index.tolist()
             sns.countplot(x=x, hue=y, data=dtf, order=order, ax=ax[0])
-            #sns.catplot(x=x, hue=y, data=dtf, kind='count', order=order, ax=ax[0])
             ax[0].grid(True)
             ### percentage
             ax[1].title.set_text('percentage')
-            a = dtf.groupby(x)[y].count().reset_index()
-            a = a.rename(columns={y:"tot"})
-            b = dtf.groupby([x,y])[y].count()
-            b = b.rename(columns={y:0}).reset_index()
-            b = b.merge(a, how="left")
-            b["%"] = b[0] / b["tot"] *100
-            sns.barplot(x=x, y="%", hue=y, data=b, ax=ax[1]).get_legend().remove()
+            sns.histplot(x=x, hue=y, data=dtf,stat="percent",multiple="dodge", ax=ax[1])
             ax[1].grid(True)
             ### fix figure
             plt.close(2)
@@ -423,6 +416,7 @@ def features_importance(X, y, X_names, model=None, task="classification", figsiz
     plt.grid(axis='both')
     plt.show()
     return dtf_importances.reset_index()
+
 
 
 
