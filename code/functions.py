@@ -16,8 +16,8 @@ import ppscore as pps
 
 ## for machine learning
 from sklearn import preprocessing, impute, utils, linear_model, feature_selection, model_selection, metrics, decomposition, cluster, ensemble
-
-
+from sklearn.metrics import accuracy_score, precision_score,recall_score,f1_score,roc_auc_score,precision_recall_curve,roc_curve
+import imblearn as imb
 
 ###############################################################################
 #                       DATA ANALYSIS                                         #
@@ -380,6 +380,121 @@ def evaluate_regr_model(y_test, predicted, figsize=(25,5)):
     ax[2].set(yticks=[], yticklabels=[], title="Residuals distribution")
     plt.show()
 
+###############################################################################
+#                   MODEL DESIGN & TESTING - CLASSIFICATION                   #
+###############################################################################
+
+def evaluate_classif_model(y_test, models_from_train,name_of_model, X_test,show_thresholds=True, figsize=(15,10)):
+    #Print
+    print("Results for :", name_of_model)
+
+    #Get classes
+    classes =  np.unique(y_test)
+
+    #Define plot
+    fig, ax = plt.subplots(nrows=1,ncols=3, figsize=figsize)
+
+    #Get pred from model
+    pred = models_from_train[name_of_model].predict(X_test)
+
+    #Confusion matrix
+    cm = metrics.confusion_matrix(y_test, pred, labels=classes)
+    sns.heatmap(cm/np.sum(cm), annot=True, fmt='.2%', cmap='Blues', ax=ax[0])
+    ax[0].set(xlabel="Pred", ylabel="True", title="Confusion matrix")
+    ax[0].set_yticklabels(labels=classes, rotation=0)
+
+    #Accuracy score
+    print('Accuracy:', accuracy_score(y_test, pred))
+
+    #Precision
+    precision = cm[1][1]/(cm[0][1]+cm[1][1])
+    print('Precision:', precision)
+
+    #Recall
+    recall = cm[1][1]/(cm[1][0]+cm[1][1])
+    print('Recall:', recall)
+
+    #F1_score
+    print('F1:', f1_score(y_test, pred))
+
+    #Obtain prediction probabilities
+    pred = models_from_train[name_of_model].predict_proba(X_test)
+    pred = [p[1] for p in pred]
+
+    #Plot ROC
+    fpr, tpr, thresholds = roc_curve(y_test, pred)
+    ax[1].plot(fpr, tpr, color='darkorange', lw=3, label='ROC AUC = %0.3f' % metrics.auc(fpr, tpr))
+    ax[1].plot([0,1], [0,1], color='navy', lw=3, linestyle='--')
+    ax[1].hlines(y=recall, xmin=-0.05, xmax=1-cm[0,0]/(cm[0,0]+cm[0,1]), color='red', linestyle='--', alpha=0.7, label="chosen threshold")
+    ax[1].vlines(x=1-cm[0,0]/(cm[0,0]+cm[0,1]), ymin=0, ymax=recall, color='red', linestyle='--', alpha=0.7)
+    ax[1].set(xlim=[-0.05,1], ylim=[0.0,1.05], xlabel='False Positive Rate', ylabel="True Positive Rate (Recall)", title="Receiver operating characteristic")
+    ax[1].legend(loc="lower right")
+    ax[1].grid(True)
+    if show_thresholds is True:
+        thres_in_plot = []
+        for i,t in enumerate(thresholds):
+            t = np.round(t,1)
+            if t not in thres_in_plot:
+                ax[1].annotate(t, xy=(fpr[i],tpr[i]), xytext=(fpr[i],tpr[i]), textcoords='offset points', ha='left', va='bottom')
+                thres_in_plot.append(t)
+
+    #Plot Precision-recall curve
+    ## Plot precision-recall curve
+    precisions, recalls, thresholds = precision_recall_curve(y_test, pred)
+    ax[2].plot(recalls, precisions, color='darkorange', lw=3, label='PR AUC = %0.3f' % metrics.auc(recalls, precisions))
+    ax[2].plot([0,1], [(cm[1,0]+cm[1,0])/len(y_test), (cm[1,0]+cm[1,0])/len(y_test)], linestyle='--', color='navy', lw=3)
+    ax[2].hlines(y=precision, xmin=0, xmax=recall, color='red', linestyle='--', alpha=0.7, label="chosen threshold")
+    ax[2].vlines(x=recall, ymin=0, ymax=precision, color='red', linestyle='--', alpha=0.7)
+    ax[2].set(xlim=[0.0,1.05], ylim=[0.0,1.05], xlabel='Recall', ylabel="Precision", title="Precision-Recall curve")
+    ax[2].legend(loc="lower left")
+    ax[2].grid(True)
+    if show_thresholds is True:
+        thres_in_plot = []
+        for i,t in enumerate(thresholds):
+            t = np.round(t,1)
+            if t not in thres_in_plot:
+                ax[2].annotate(np.round(t,1), xy=(recalls[i],precisions[i]), xytext=(recalls[i],precisions[i]), textcoords='offset points', ha='right', va='bottom')
+                thres_in_plot.append(t)
+
+    plt.show()
+
+def tune_classif_model(X_train, y_train, model_base=None, param_dic=None, scoring="f1", searchtype="RandomSearch", n_iter=1000, cv=10, figsize=(10,5)):
+    ## params
+    model_base = ensemble.GradientBoostingClassifier() if model_base is None else model_base
+    param_dic = {'learning_rate':[0.15,0.1,0.05,0.01,0.005,0.001], 'n_estimators':[100,250,500,750,1000,1250,1500,1750], 'max_depth':[2,3,4,5,6,7]} if param_dic is None else param_dic
+    dic_scores = {'accuracy':metrics.make_scorer(metrics.accuracy_score), 'precision':metrics.make_scorer(metrics.precision_score),
+                  'recall':metrics.make_scorer(metrics.recall_score), 'f1':metrics.make_scorer(metrics.f1_score)}
+
+    ## Search
+    print("---", searchtype, "---")
+    if searchtype == "RandomSearch":
+        random_search = model_selection.RandomizedSearchCV(model_base, param_distributions=param_dic, n_iter=n_iter, scoring=dic_scores, refit=scoring).fit(X_train, y_train)
+        print("Best Model parameters:", random_search.best_params_)
+        print("Best Model "+scoring+":", round(random_search.best_score_, 2))
+        model = random_search.best_estimator_
+
+    elif searchtype == "GridSearch":
+        grid_search = model_selection.GridSearchCV(model_base, param_dic, scoring=dic_scores, refit=scoring).fit(X_train, y_train)
+        print("Best Model parameters:", grid_search.best_params_)
+        print("Best Model mean "+scoring+":", round(grid_search.best_score_, 2))
+        model = grid_search.best_estimator_
+
+    ## K fold validation
+    print("")
+    print("--- Kfold Validation ---")
+    Kfold_base = model_selection.cross_validate(estimator=model_base, X=X_train, y=y_train, cv=cv, scoring=dic_scores)
+    Kfold_model = model_selection.cross_validate(estimator=model, X=X_train, y=y_train, cv=cv, scoring=dic_scores)
+    for score in dic_scores.keys():
+        print(score, "mean - base model:", round(Kfold_base["test_"+score].mean(),2), " --> best model:", round(Kfold_model["test_"+score].mean()))
+    utils_kfold_roc(model, X_train, y_train, cv=cv, figsize=figsize)
+
+    ## Threshold analysis
+    print("")
+    print("--- Threshold Selection ---")
+    utils_threshold_selection(model, X_train, y_train, figsize=figsize)
+
+    return model
+
 
 ###############################################################################
 #                  FEATURES SELECTION                                         #
@@ -418,7 +533,76 @@ def features_importance(X, y, X_names, model=None, task="classification", figsiz
     return dtf_importances.reset_index()
 
 
+###############################################################################
+#                       PREPROCESSING                                         #
+###############################################################################
 
+def rebalance(dtf, y, balance=None,  method="random", replace=True, size=1):
+    '''
+
+    :param dtf: dataframe - feature matrix dtf
+    :param y: str - column to use as target
+    :param balance: str - "up", "down", if None just prints some stats
+    :param method: str - "random" for sklearn or "knn" for imblearn
+    :param replace:
+    :param size: num - 1 for same size of the other class, 0.5 for half of the other class
+    :return: rebalanced dtf
+    '''
+    ## check
+    print("--- situation ---")
+    check = dtf[y].value_counts().to_frame()
+    check["%"] = (check[y] / check[y].sum() *100).round(1).astype(str) + '%'
+    print(check)
+    print("tot:", check[y].sum())
+
+    ## sklearn
+    if balance is not None and method == "random":
+        ### set the major and minor class
+        major = check.index[0]
+        minor = check.index[1]
+        dtf_major = dtf[dtf[y]==major]
+        dtf_minor = dtf[dtf[y]==minor]
+
+        ### up-sampling
+        if balance == "up":
+            print("--- upsampling ---")
+            print("   randomly replicate observations from the minority class (Overfitting risk)")
+            dtf_minor = utils.resample(dtf_minor, replace=replace, random_state=123, n_samples=int(size*len(dtf_major)))
+            dtf_balanced = pd.concat([dtf_major, dtf_minor])
+
+        ### down-sampling
+        elif balance == "down":
+            print("--- downsampling ---")
+            print("   randomly remove observations of the majority class (Underfitting risk)")
+            dtf_minor = utils.resample(dtf_minor, replace=replace, random_state=123, n_samples=int(size*len(dtf_major)))
+            dtf_balanced = pd.concat([dtf_major, dtf_minor])
+
+    ## imblearn
+    if balance is not None and method == "knn":
+        ### up-sampling
+        if balance == "up":
+            print("--- upsampling ---")
+            print("   create synthetic observations from the minority class (Distortion risk)")
+            smote = imb.over_sampling.SMOTE(random_state=123)
+            dtf_balanced, y_values = smote.fit_resample(dtf.drop(y,axis=1), y=dtf[y])
+            dtf_balanced[y] = y_values
+
+        ### down-sampling
+        elif balance == "down":
+            print("--- downsampling ---")
+            print("   select observations that don't affect performance (Underfitting risk)")
+            nn = imb.under_sampling.CondensedNearestNeighbour(random_state=123)
+            dtf_balanced, y_values = nn.fit_resample(dtf.drop(y,axis=1), y=dtf[y])
+            dtf_balanced[y] = y_values
+
+    ## check rebalance
+    if balance is not None:
+        print("--- new situation ---")
+        check = dtf_balanced[y].value_counts().to_frame()
+        check["%"] = (check[y] / check[y].sum() *100).round(1).astype(str) + '%'
+        print(check)
+        print("tot:", check[y].sum())
+        return dtf_balanced
 
 
 
