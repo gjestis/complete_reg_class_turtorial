@@ -214,7 +214,7 @@ def bivariate_plot(dtf, x, y, max_cat=20, figsize=(10,5)):
         print(e)
 
 
-def cross_distributions(dtf, x1, x2, y, max_cat=20, figsize=(10,5)):
+def cross_distributions(dtf, x1, x2, y, max_cat=20,show_only_min_clas=False,min_class_num = 1, figsize=(10,5)):
     ## Y cat
     if utils_recognize_type(dtf, y, max_cat) == "cat":
 
@@ -226,7 +226,10 @@ def cross_distributions(dtf, x1, x2, y, max_cat=20, figsize=(10,5)):
 
         ### num vs num --> scatter with hue
         elif (utils_recognize_type(dtf, x1, max_cat) == "num") & (utils_recognize_type(dtf, x2, max_cat) == "num"):
-            sns.lmplot(x=x1, y=x2, data=dtf, hue=y, height=figsize[1])
+            if show_only_min_clas == False:
+                sns.lmplot(x=x1, y=x2, data=dtf, hue=y, height=figsize[1])
+            else:
+                sns.lmplot(x=x1,y=x2,data= dtf[dtf[y] == min_class_num],hue=y,fit_reg=True,height=figsize[1] )
 
         ### num vs cat --> boxplot with hue
         else:
@@ -270,6 +273,7 @@ def corr_matrix(dtf, method="pearson", negative=True, annotation=True, figsize=(
     dtf_corr = dtf.copy()
     for col in dtf_corr.columns:
         if dtf_corr[col].dtype == "O":
+            #Mapping each category to a unique number so that corr is possible
             print("--- WARNING: Factorizing", dtf_corr[col].nunique(),"labels of", col, "---")
             dtf_corr[col] = dtf_corr[col].factorize(sort=True)[0]
     ## corr matrix
@@ -603,8 +607,5 @@ def rebalance(dtf, y, balance=None,  method="random", replace=True, size=1):
         print(check)
         print("tot:", check[y].sum())
         return dtf_balanced
-
-
-
 
 
