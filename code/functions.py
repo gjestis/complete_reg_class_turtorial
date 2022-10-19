@@ -608,4 +608,125 @@ def rebalance(dtf, y, balance=None,  method="random", replace=True, size=1):
         print("tot:", check[y].sum())
         return dtf_balanced
 
+###############################################################################
+#                       CLUSTERING (UNSUPERVISED)                             #
+###############################################################################
+def find_best_k(X, max_k=10, plot=True,elbow=True):
+    #ELBOW METHOD
+    if elbow is True:
+        ## iterations
+        distortions = []
+        for i in range(1, max_k+1):
+            if len(X) >= i:
+                model = cluster.KMeans(n_clusters=i, init='k-means++', max_iter=300, n_init=10, random_state=0)
+                model.fit(X)
+                distortions.append(model.inertia_)
+
+        ## best k: the lowest second derivative
+        k = [i*100 for i in np.diff(distortions,2)].index(min([i*100 for i in np.diff(distortions,2)]))
+        ## plot
+        if plot is True:
+            fig, ax = plt.subplots()
+            ax.plot(range(1, len(distortions)+1), distortions)
+            ax.axvline(k, ls='--', color="red", label="k = "+str(k))
+            ax.set(title='The Elbow Method', xlabel='Number of clusters', ylabel="Distortion")
+            ax.legend()
+            ax.grid(True)
+            plt.show()
+        return k
+
+    #CILHOUETTE METHODE
+    if elbow is False:
+        ## iterations (canidate values for nr of cluster)
+        parameters = [*range(2, max_k +1 , 1)]
+        ## instantiating ParameterGrid, pass number of clusters as input
+        parameter_grid = ParameterGrid({'n_clusters': parameters})
+        best_score = -1
+        kmeans_model = cluster.KMeans()
+        distortions = []
+        silhouette_scores = []
+        ## evaluation based on silhouette_score
+        for p in parameter_grid:
+            kmeans_model.set_params(**p)    # set current hyper parameter
+            kmeans_model.fit(X)          # fit model on dataset, this will find clusters based on parameter p
+            ss = metrics.silhouette_score(X, kmeans_model.labels_)   # calculate silhouette_score
+            silhouette_scores += [ss]
+            print('Parameter:', p, 'Score', ss)
+            print("------------")
+            # check p which has the best score
+            if ss > best_score:
+                best_score = ss
+                best_grid = p
+        ## creating the best model
+        best_model = cluster.KMeans(n_clusters=p, init='k-means++')
+        # plotting silhouette score
+        plt.bar(range(len(silhouette_scores)), list(silhouette_scores), align='center', color='#722f59', width=0.5)
+        plt.xticks(range(len(silhouette_scores)), list(parameters))
+        plt.title('Silhouette Score', fontweight='bold')
+        plt.xlabel('Number of Clusters')
+        plt.show()
+        return p
+
+def utils_plot_cluster(dtf, x1, x2, th_centroids=None, figsize=(10,5)):
+    ## plot points and real centroids
+    fig, ax = plt.subplots(figsize=figsize)
+    k = dtf["cluster"].nunique()
+    sns.scatterplot(x=x1, y=x2, data=dtf, palette=sns.color_palette("bright",k),
+                    hue='cluster', size="centroids", size_order=[1,0],
+                    legend="brief", ax=ax).set_title('Clustering (k='+str(k)+')')
+
+    ## plot theoretical centroids
+    if th_centroids is not None:
+        ax.scatter(th_centroids[:,dtf.columns.tolist().index(x1)],
+                   th_centroids[:,dtf.columns.tolist().index(x2)],
+                   s=50, c='black', marker="x")
+
+    ## plot links from points to real centroids
+    # if plot_links is True:
+    #     centroids_idx = dtf[dtf["centroids"]==1].index
+    #     colors = itertools.cycle('bgrcmykbgrcmykbgrcmykbgrcmyk')
+    #     for k, col in zip(range(k), colors):
+    #         class_members = dtf["cluster"].values == k
+    #         cluster_center = dtf[[x1,x2]].values[centroids_idx[k]]
+    #         plt.plot(dtf[[x1,x2]].values[class_members, 0], dtf[[x1,x2]].values[class_members, 1], col + '.')
+    #         plt.plot(cluster_center[0], cluster_center[1], 'o', markerfacecolor=col, markeredgecolor='k', markersize=14)
+    #         for x in dtf[[x1,x2]].values[class_members]:
+    #             plt.plot([cluster_center[0], x[0]],
+    #                      [cluster_center[1], x[1]],
+    #                      col)
+
+    ax.grid(True)
+    plt.show()
+
+
+
+def fit_ml_cluster(X, model=None, k=None, lst_2Dplot=None, figsize=(10,5)):
+    ## model
+    if (model is None) and (k is None):
+        model = cluster.AffinityPropagation()
+        print("--- k not defined: using Affinity Propagation ---")
+    elif (model is None) and (k is not None):
+        model = cluster.KMeans(n_clusters=k, init='k-means++')
+        print("---", "k="+str(k)+": using k-means ---")
+
+    ## clustering
+    dtf_X = X.copy()
+    dtf_X["cluster"] = model.fit_predict(X)
+    k = dtf_X["cluster"].nunique()
+    print("--- found", k, "clusters ---")
+    print(dtf_X.groupby("cluster")["cluster"].count().sort_values(ascending=False))
+
+    ## find real centroids
+    closest, distances = scipy.cluster.vq.vq(model.cluster_centers_, dtf_X.drop("cluster", axis=1).values)
+    dtf_X["centroids"] = 0
+    for i in closest:
+        dtf_X["centroids"].iloc[i] = 1
+
+    ## plot
+    if (lst_2Dplot is not None) or (X.shape[1] == 2):
+        lst_2Dplot = X.columns.tolist() if lst_2Dplot is None else lst_2Dplot
+        th_centroids = model.cluster_centers_ if "KMeans" in str(model) else None
+        utils_plot_cluster(dtf_X, x1=lst_2Dplot[0], x2=lst_2Dplot[1], th_centroids=th_centroids, figsize=figsize)
+
+    return model, dtf_X
 
