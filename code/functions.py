@@ -17,7 +17,10 @@ import ppscore as pps
 ## for machine learning
 from sklearn import preprocessing, impute, utils, linear_model, feature_selection, model_selection, metrics, decomposition, cluster, ensemble
 from sklearn.metrics import accuracy_score, precision_score,recall_score,f1_score,roc_auc_score,precision_recall_curve,roc_curve
+from sklearn.model_selection import ParameterGrid
+from sklearn.cluster import KMeans
 import imblearn as imb
+
 
 ###############################################################################
 #                       DATA ANALYSIS                                         #
@@ -633,7 +636,7 @@ def find_best_k(X, max_k=10, plot=True,elbow=True):
             ax.legend()
             ax.grid(True)
             plt.show()
-        return k
+        return print("Best number of cluster :",k)
 
     #CILHOUETTE METHODE
     if elbow is False:
@@ -642,7 +645,7 @@ def find_best_k(X, max_k=10, plot=True,elbow=True):
         ## instantiating ParameterGrid, pass number of clusters as input
         parameter_grid = ParameterGrid({'n_clusters': parameters})
         best_score = -1
-        kmeans_model = cluster.KMeans()
+        kmeans_model = cluster.KMeans(init='k-means++',max_iter=300, n_init=10, random_state=0)
         distortions = []
         silhouette_scores = []
         ## evaluation based on silhouette_score
@@ -657,15 +660,13 @@ def find_best_k(X, max_k=10, plot=True,elbow=True):
             if ss > best_score:
                 best_score = ss
                 best_grid = p
-        ## creating the best model
-        best_model = cluster.KMeans(n_clusters=p, init='k-means++')
         # plotting silhouette score
         plt.bar(range(len(silhouette_scores)), list(silhouette_scores), align='center', color='#722f59', width=0.5)
         plt.xticks(range(len(silhouette_scores)), list(parameters))
         plt.title('Silhouette Score', fontweight='bold')
         plt.xlabel('Number of Clusters')
         plt.show()
-        return p
+        return print("Best number of clusters :",best_grid['n_clusters'])
 
 def utils_plot_cluster(dtf, x1, x2, th_centroids=None, figsize=(10,5)):
     ## plot points and real centroids
@@ -712,6 +713,7 @@ def fit_ml_cluster(X, model=None, k=None, lst_2Dplot=None, figsize=(10,5)):
     ## clustering
     dtf_X = X.copy()
     dtf_X["cluster"] = model.fit_predict(X)
+    col_clusters = pd.DataFrame(dtf_X["cluster"])
     k = dtf_X["cluster"].nunique()
     print("--- found", k, "clusters ---")
     print(dtf_X.groupby("cluster")["cluster"].count().sort_values(ascending=False))
@@ -728,5 +730,10 @@ def fit_ml_cluster(X, model=None, k=None, lst_2Dplot=None, figsize=(10,5)):
         th_centroids = model.cluster_centers_ if "KMeans" in str(model) else None
         utils_plot_cluster(dtf_X, x1=lst_2Dplot[0], x2=lst_2Dplot[1], th_centroids=th_centroids, figsize=figsize)
 
-    return model, dtf_X
+    return model, dtf_X, col_clusters
 
+def inter_clusters(df,col_with_clus):
+    for c in df:
+        grid = sns.FacetGrid(df, col = col_with_clus)
+        grid.map(plt.hist, c)
+        plt.show
