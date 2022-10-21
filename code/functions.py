@@ -20,7 +20,10 @@ from sklearn.metrics import accuracy_score, precision_score,recall_score,f1_scor
 from sklearn.model_selection import ParameterGrid
 from sklearn.cluster import KMeans
 import imblearn as imb
-
+from sklearn.decomposition import PCA
+from sklearn.metrics.pairwise import cosine_similarity
+import scipy.cluster.hierarchy as shc
+from sklearn.cluster import AgglomerativeClustering
 
 ###############################################################################
 #                       DATA ANALYSIS                                         #
@@ -733,7 +736,54 @@ def fit_ml_cluster(X, model=None, k=None, lst_2Dplot=None, figsize=(10,5)):
     return model, dtf_X, col_clusters
 
 def inter_clusters(df,col_with_clus):
+    #Create hist for each cluster
     for c in df:
         grid = sns.FacetGrid(df, col = col_with_clus)
         grid.map(plt.hist, c)
         plt.show
+
+    #Get statistics for each cluster
+    stat = df.groupby(col_with_clus).describe()
+    return stat
+
+def visual_clusters_pca(df_scaled,best_model_labels,colors,names):
+    #Pca
+    dist= 1 - cosine_similarity(df_scaled)
+    pca = PCA(2)
+    pca.fit(dist)
+    X_PCA = pca.transform(dist)
+    print("Shape after PCA red : ", X_PCA.shape)
+    x, y = X_PCA[:, 0], X_PCA[:, 1]
+    #Creating df
+    df_pc = pd.DataFrame({'x': x, 'y':y, 'label':best_model_labels})
+    groups = df_pc.groupby('label')
+    #Plotting
+    fig, ax = plt.subplots(figsize=(20, 13))
+    for name, group in groups:
+        ax.plot(group.x, group.y, marker='o', linestyle='', ms=5,
+                color=colors[name],label=names[name], mec='none')
+        ax.set_aspect('auto')
+        ax.tick_params(axis='x',which='both',bottom='off',top='off',labelbottom='off')
+        ax.tick_params(axis= 'y',which='both',left='off',top='off',labelleft='off')
+
+    ax.legend()
+    ax.set_title("Customers Segmentation based on their Credit Card usage behaviour.")
+    plt.show()
+
+
+def hierar_clust_dendo(data_scaled,link):
+    plt.figure(figsize=(10, 7))
+    plt.title("Dendrograms")
+    plt.ylabel('Euclidean distances')
+    dend = shc.dendrogram(shc.linkage(data_scaled, method=link))
+
+
+
+
+
+
+
+
+
+
+
