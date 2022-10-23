@@ -24,6 +24,7 @@ from sklearn.decomposition import PCA
 from sklearn.metrics.pairwise import cosine_similarity
 import scipy.cluster.hierarchy as shc
 from sklearn.cluster import AgglomerativeClustering
+from sklearn.neighbors import NearestNeighbors
 
 ###############################################################################
 #                       DATA ANALYSIS                                         #
@@ -776,6 +777,25 @@ def hierar_clust_dendo(data_scaled,link):
     plt.title("Dendrograms")
     plt.ylabel('Euclidean distances')
     dend = shc.dendrogram(shc.linkage(data_scaled, method=link))
+
+
+def dbscan_with_parameter_tun(df):
+    #Define minPts
+    minPts = df.shape[1]*2
+    #Fit knn model
+    nbrs = NearestNeighbors(n_neighbors=minPts).fit(df)
+    #Find the k-neighbors of a point
+    neigh_dist, neigh_ind = nbrs.kneighbors(df)
+    #Sort the neighbor distances (lengths to points) in ascending order
+    #axis = 0 represents sort along first axis i.e. sort along row
+    sort_neigh_dist = np.sort(neigh_dist, axis=0)
+    #Plot the distances
+    k_dist = sort_neigh_dist[:,minPts-1]
+    plt.plot(k_dist)
+    plt.ylabel("k-NN distance")
+    plt.xlabel("Sorted observations " + str(minPts) + "th NN")
+    plt.show()
+    return minPts
 
 
 
