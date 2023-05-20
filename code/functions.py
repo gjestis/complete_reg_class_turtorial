@@ -6,12 +6,15 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import itertools
+import matplotlib.dates as mdates
 
 ## for statistical tests
 import scipy
 import statsmodels.formula.api as smf
 import statsmodels.api as sm
 import ppscore as pps
+from scipy.stats import t
+from statsmodels.tsa.seasonal import seasonal_decompose
 
 ## for machine learning
 from sklearn import preprocessing, impute, utils, linear_model, feature_selection, model_selection, metrics, \
@@ -26,6 +29,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 import scipy.cluster.hierarchy as shc
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.neighbors import NearestNeighbors
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_absolute_error
 
 
 ###############################################################################
@@ -835,28 +840,6 @@ def dbscan_with_parameter_tun(df):
 ###############################################################################
 #                         TS ANALYSIS                                         #
 ###############################################################################
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-import numpy as np
-
-#from lightgbm import LGBMRegressor
-from statsmodels.tsa.seasonal import seasonal_decompose
-from statsmodels.graphics.tsaplots import plot_acf
-from scipy.stats import t
-from sklearn.model_selection import TimeSeriesSplit, train_test_split
-from sklearn.metrics import mean_absolute_error
-
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.metrics import mean_absolute_error
-
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-from statsmodels.tsa.seasonal import seasonal_decompose
-
 
 def decompose_ts(df, datetime_col, target_col, samples=250, period=24):
     if samples == 'all':
@@ -906,18 +889,6 @@ def decompose_ts(df, datetime_col, target_col, samples=250, period=24):
     plt.show()
 
 
-
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.metrics import mean_absolute_error
-
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from sklearn.metrics import mean_absolute_error
-
 def train_time_series_with_avg(df, target_var, horizon=10, use_moving_avg=False, window=7):
     # Isolate the target variable
     y = df[target_var]
@@ -962,10 +933,6 @@ def train_time_series_with_avg(df, target_var, horizon=10, use_moving_avg=False,
     plt.show()
 
 
-
-import pandas as pd
-import matplotlib.pyplot as plt
-
 def average_forecast(df, start_date, end_date, target, moving_avg_window=None):
     # Create a new DataFrame for the forecasted values
     forecast_df = pd.DataFrame(index=pd.date_range(start=start_date, end=end_date, freq='M'))
@@ -994,8 +961,113 @@ def average_forecast(df, start_date, end_date, target, moving_avg_window=None):
     return forecast_df
 
 
+def find_optimal_lags(df, target_col, feature_col, max_lags):
+    mae_scores = []
 
-def create_lagged_matrix(df, column, lag):
+    # Iterate over different lag values
+    for lag in range(1, max_lags + 1):
+        # Create lagged features
+        lagged_df = pd.DataFrame()
+        lagged_df[feature_col] = df[feature_col].shift(lag)
+        lagged_df[target_col] = df[target_col]
+
+        # Drop missing values
+        lagged_df.dropna(inplace=True)
+
+        # Split the data into train and test sets
+        train_size = int(len(lagged_df) * 0.8)
+        X_train = lagged_df[feature_col].iloc[:train_size].values.reshape(-1, 1)
+        y_train = lagged_df[target_col].iloc[:train_size].values.reshape(-1, 1)
+        X_test = lagged_df[feature_col].iloc[train_size:].values.reshape(-1, 1)
+        y_test = lagged_df[target_col].iloc[train_size:].values.reshape(-1, 1)
+
+        # Fit a linear regression model
+        model = LinearRegression()
+        model.fit(X_train, y_train)
+
+        # Make predictions on the test set
+        y_pred = model.predict(X_test)
+
+        # Calculate MAE score
+        mae = mean_absolute_error(y_test, y_pred)
+        mae_scores.append(mae)
+
+    # Find the lag value with the lowest MAE score
+    optimal_lag = np.argmin(mae_scores) + 1
+    min_mae = np.min(mae_scores)
+
+    # Plot the MAE scores
+    plt.plot(range(1, max_lags + 1), mae_scores)
+    plt.xlabel('Number of Lag Values')
+    plt.ylabel('MAE')
+    plt.title('MAE vs Number of Lag Values')
+    plt.grid(True)
+    plt.show()
+
+    return optimal_lag, min_mae
+
+
+def create_lagged_matrix_for_train_test(df, target_column, feature_column, lag):
+    """
+    Creates a lagged matrix from a pandas DataFrame with a target variable and a feature variable.
+
+    Args:
+        df (pandas.DataFrame): DataFrame containing the time series data.
+        target_column (str): Name of the column containing the target variable.
+        feature_column (str): Name of the column containing the feature variable.
+        lag (int): Number of lagged values to include.
+
+    Returns:
+        numpy.array, numpy.array: X array with lagged feature values, y array with lagged target values.
+    """
+    lagged_df = pd.DataFrame()
+    for i in range(lag):
+        lagged_df[f'Lag{i + 1}_{feature_column}'] = df[feature_column].shift(i + 1)
+    lagged_df[f'Lag1_{target_column}'] = df[target_column].shift(1)
+    lagged_df.dropna(inplace=True)
+    X = lagged_df.iloc[:, :lag].values
+    y = lagged_df.iloc[:, lag].values
+    return X, y
+
+
+def train_time_series_with_linreg(X, y, horizon=24 * 7):
+    # Convert to pd
+    X = pd.DataFrame(X)
+    y = pd.DataFrame(y)
+
+    # Create train and test
+    X_train, X_test = X.iloc[:-horizon, :], X.iloc[-horizon:, :]
+    y_train, y_test = y.iloc[:-horizon], y.iloc[-horizon:]
+
+    # Reset index for X_test and y_test
+    X_test = X_test.reset_index(drop=True)
+    y_test = y_test.reset_index(drop=True)
+
+    # Create, train, and do inference of the model
+    model = LinearRegression()
+    model.fit(X_train, y_train)
+    predictions = model.predict(X_test)
+    # If predictons are negative map them to min value
+    for i in range(len(predictions)):
+        if predictions[i] <= 0:
+            predictions[i] = 440
+    # Calculate MAE
+    mae = np.round(mean_absolute_error(y_test, predictions), 3)
+    # Plot reality vs prediction for the last week of the dataset
+    fig = plt.figure(figsize=(16, 8))
+    plt.title(f'Real vs Prediction - MAE {mae}', fontsize=20)
+    plt.plot(y_test, color='red', marker='o')
+    plt.plot(predictions, color='green', marker='o', linestyle='dashed')
+    plt.xlabel('Days', fontsize=16)
+    plt.ylabel('Gas Demand', fontsize=16)
+    plt.legend(labels=['Real', 'Prediction'], fontsize=16)
+    plt.grid()
+    plt.show()
+
+    return model, mae, predictions
+
+
+def create_lagged_matrix_for_forecast(df, column, lag):
     """
     Creates a matrix with lagged values from a given column of a DataFrame
     and divides it into X and y arrays suitable for machine learning training.
@@ -1010,60 +1082,35 @@ def create_lagged_matrix(df, column, lag):
     """
     lagged_df = pd.DataFrame()
     for i in range(lag):
-        lagged_df[f'Lag{i+1}'] = df[column].shift(i+1)
+        lagged_df[f'Lag{i + 1}'] = df[column].shift(i + 1)
     lagged_df.dropna(inplace=True)
-    X = lagged_df.iloc[:, 1:].values
-    y = lagged_df.iloc[:, 0].values
-    return X, y, lagged_df
+    # X = lagged_df.iloc[:, 1:].values
+    # y = lagged_df.iloc[:, 0].values
+    return lagged_df
 
 
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_absolute_error
+def plot_forecast(df, forecast_df, target):
+    """
+    Plot forecasted values on the original time series plot.
 
-def train_time_series_with_linreg(X,y ,horizon=24*7):
-    # Convert to pd
-    X = pd.DataFrame(X)
-    y = pd.DataFrame(y)
+    Args:
+        df (pandas.DataFrame): Historical data.
+        forecast_df (pandas.DataFrame): Forecasted values.
+        target (str): Target variable column name.
 
-    # Create train and test
-    X_train, X_test = X.iloc[:-horizon,:], X.iloc[-horizon:,:]
-    y_train, y_test = y.iloc[:-horizon], y.iloc[-horizon:]
-
-    # Reset index for X_test and y_test
-    X_test = X_test.reset_index(drop=True)
-    y_test = y_test.reset_index(drop=True)
-
-
-    # Create, train, and do inference of the model
-    model = LinearRegression()
-    model.fit(X_train, y_train)
-    predictions = model.predict(X_test)
-    # If predictons are negative map them to min value
-    for i in range(len(predictions)):
-        if predictions[i] <= 0:
-            predictions[i] = 440
-    # Calculate MAE
-    mae = np.round(mean_absolute_error(y_test, predictions), 3)
-    # Plot reality vs prediction for the last week of the dataset
-    fig = plt.figure(figsize=(16,8))
-    plt.title(f'Real vs Prediction - MAE {mae}', fontsize=20)
-    plt.plot(y_test, color='red', marker='o')
-    plt.plot(predictions, color='green', marker='o', linestyle='dashed')
-    plt.xlabel('Days', fontsize=16)
-    plt.ylabel('Gas Demand', fontsize=16)
-    plt.legend(labels=['Real', 'Prediction'], fontsize=16)
-    plt.grid()
+    Returns:
+        None
+    """
+    plt.figure(figsize=(12, 6))
+    plt.plot(df.index, df[target], label='Original')
+    plt.plot(forecast_df.index, forecast_df['Forecast'], label='Forecast')
+    plt.title('Original Time Series and Forecast')
+    plt.xlabel('Date')
+    plt.ylabel('Value')
+    plt.legend()
+    plt.grid(True)
     plt.show()
 
-    # Create a dataframe with the variable importances of the model (not applicable for linear regression)
-    df_importances = None
-
-    return model, mae, df_importances
-
-
-import numpy as np
-
-import numpy as np
 
 def iterative_forecasting(X, model, num_forecasts, column_names):
     """
@@ -1111,160 +1158,3 @@ def iterative_forecasting(X, model, num_forecasts, column_names):
         print(X_copy)
 
     return forecast_df
-
-
-def plot_forecast(df, forecast_df, target):
-    """
-    Plot forecasted values on the original time series plot.
-
-    Args:
-        df (pandas.DataFrame): Historical data.
-        forecast_df (pandas.DataFrame): Forecasted values.
-        target (str): Target variable column name.
-
-    Returns:
-        None
-    """
-    plt.figure(figsize=(12, 6))
-    plt.plot(df.index, df[target], label='Original')
-    plt.plot(forecast_df.index, forecast_df['Forecast'], label='Forecast')
-    plt.title('Original Time Series and Forecast')
-    plt.xlabel('Date')
-    plt.ylabel('Value')
-    plt.legend()
-    plt.grid(True)
-    plt.show()
-
-
-def create_lagged_matrix_2(df, target_column, feature_column, lag):
-    """
-    Creates a lagged matrix from a pandas DataFrame with a target variable and a feature variable.
-
-    Args:
-        df (pandas.DataFrame): DataFrame containing the time series data.
-        target_column (str): Name of the column containing the target variable.
-        feature_column (str): Name of the column containing the feature variable.
-        lag (int): Number of lagged values to include.
-
-    Returns:
-        numpy.array, numpy.array: X array with lagged feature values, y array with lagged target values.
-    """
-    lagged_df = pd.DataFrame()
-    for i in range(lag):
-        lagged_df[f'Lag{i+1}_{feature_column}'] = df[feature_column].shift(i+1)
-    lagged_df[f'Lag1_{target_column}'] = df[target_column].shift(1)
-    lagged_df.dropna(inplace=True)
-    X = lagged_df.iloc[:, :lag].values
-    y = lagged_df.iloc[:, lag].values
-    return X, y
-
-
-def plot(df):
-    plt.plot(df)
-    plt.show()
-
-
-
-
-def create_lagged_matrix_3(df, column, lag):
-    """
-    Creates a matrix with lagged values from a given column of a DataFrame
-    and divides it into X and y arrays suitable for machine learning training.
-
-    Args:
-        df (pandas.DataFrame): DataFrame containing the time series data.
-        column (str): Name of the column containing the time series.
-        lag (int): Number of lagged values to include.
-
-    Returns:
-        numpy.array, numpy.array: X array with lagged values, y array with target values.
-    """
-    lagged_df = pd.DataFrame()
-    for i in range(lag):
-        lagged_df[f'Lag{i+1}'] = df[column].shift(i+1)
-    lagged_df.dropna(inplace=True)
-    #X = lagged_df.iloc[:, 1:].values
-    #y = lagged_df.iloc[:, 0].values
-    return lagged_df
-
-
-
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error
-
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error
-
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error
-
-def find_optimal_lag(X, y, lag_values, test_size=0.2):
-    """
-    Find the optimal number of lag values for predicting a gas demand variable.
-
-    Args:
-        X (numpy.ndarray): Array containing the lagged values.
-        y (numpy.ndarray): Array containing the target variable.
-        lag_values (list): List of lag values to test.
-        test_size (float): Proportion of the data to use for validation (default: 0.2).
-
-    Returns:
-        int: Optimal number of lag values.
-
-    """
-    # Split the data into train and validation sets
-    split_index = int(len(X) * (1 - test_size))
-    X_train = X[:split_index]
-    y_train = y[:split_index]
-    X_val = X[split_index:]
-    y_val = y[split_index:]
-
-    # Initialize variables for storing performance metrics
-    metrics = []
-
-    # Iterate over the lag values
-    for lag in lag_values:
-        # Prepare X and y for training
-        X_train_lagged = X_train[:-lag]
-        y_train_lagged = y_train[lag:]
-        X_val_lagged = X_val[:-lag]
-        y_val_lagged = y_val[lag:]
-
-        # Train a linear regression model
-        model = LinearRegression()
-        model.fit(X_train_lagged, y_train_lagged)
-
-        # Make predictions on the validation set
-        y_pred = model.predict(X_val_lagged)
-
-        # Calculate the root mean squared error (RMSE)
-        rmse = np.sqrt(mean_squared_error(y_val_lagged, y_pred))
-
-        # Store the RMSE along with the lag value
-        metrics.append((lag, rmse))
-
-    # Plot the lag values vs RMSE
-    lag_values, rmse_values = zip(*metrics)
-    plt.plot(lag_values, rmse_values, 'bo-')
-    plt.xlabel('Number of Lag Values')
-    plt.ylabel('RMSE')
-    plt.title('Lag Values vs RMSE')
-    plt.grid(True)
-    plt.show()
-
-    # Find the lag value with the lowest RMSE
-    optimal_lag = min(metrics, key=lambda x: x[1])[0]
-    return optimal_lag
-
-
-
-
