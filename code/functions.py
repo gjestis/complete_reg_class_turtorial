@@ -853,44 +853,58 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import mean_absolute_error
 
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from statsmodels.tsa.seasonal import seasonal_decompose
 
 
-def decompose_ts(df, share_type, samples=250, period=24):
+def decompose_ts(df, datetime_col, target_col, samples=250, period=24):
     if samples == 'all':
-        #decomposing all time series timestamps
-        res = seasonal_decompose(df[share_type].values, period=period)
+        # Decomposing all time series timestamps
+        res = seasonal_decompose(df[target_col].values, period=period)
     else:
-        #decomposing a sample of the time series
-        res = seasonal_decompose(df[share_type].values[-samples:], period=period)
+        # Decomposing a sample of the time series
+        res = seasonal_decompose(df[target_col].values[-samples:], period=period)
 
     observed = res.observed
     trend = res.trend
     seasonal = res.seasonal
     residual = res.resid
 
-    #plot the complete time series
-    fig, axs = plt.subplots(4, figsize=(16,10))
+    # Get the corresponding dates for the decomposed components
+    dates = pd.to_datetime(df[datetime_col].iloc[-len(observed):], format='%d-%b-%y')
+
+    # Plot the complete time series
+    fig, axs = plt.subplots(4, figsize=(16, 10))
     axs[0].set_title('OBSERVED', fontsize=16)
-    axs[0].plot(observed)
+    axs[0].plot(dates, observed)
     axs[0].grid()
 
-    #plot the trend of the time series
+    # Plot the trend of the time series
     axs[1].set_title('TREND', fontsize=16)
-    axs[1].plot(trend)
+    axs[1].plot(dates, trend)
     axs[1].grid()
 
-    #plot the seasonality of the time series. Period=24 daily seasonality | Period=24*7 weekly seasonality.
+    # Plot the seasonality of the time series
     axs[2].set_title('SEASONALITY', fontsize=16)
-    axs[2].plot(seasonal)
+    axs[2].plot(dates, seasonal)
     axs[2].grid()
 
-    #plot the noise of the time series
+    # Plot the noise of the time series
     axs[3].set_title('NOISE', fontsize=16)
-    axs[3].plot(residual)
-    axs[3].scatter(y=residual, x=range(len(residual)), alpha=0.5)
+    axs[3].plot(dates, residual)
+    axs[3].scatter(x=dates, y=residual, alpha=0.5)
     axs[3].grid()
 
+    # Format the x-axis tick labels as dates
+    date_format = mdates.DateFormatter('%Y-%m-%d')
+    for ax in axs:
+        ax.xaxis.set_major_formatter(date_format)
+        ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+
+    plt.tight_layout()
     plt.show()
+
 
 
 import pandas as pd
@@ -899,7 +913,12 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import mean_absolute_error
 
-def train_time_series_with_avg(df,target_var, horizon=10):
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.metrics import mean_absolute_error
+
+def train_time_series_with_avg(df, target_var, horizon=10, use_moving_avg=False, window=7):
     # Isolate the target variable
     y = df[target_var]
 
@@ -910,37 +929,57 @@ def train_time_series_with_avg(df,target_var, horizon=10):
     print("Start date for test:", y_test.index[0])
     print("End date for test:", y_test.index[-1])
 
-    # Calculate historical average
-    historical_average = y_train.mean()
-    print("The historical average is:", historical_average)
+    if use_moving_avg:
+        # Calculate moving average
+        moving_average = y_train.rolling(window=window).mean()
+        last_window_average = moving_average.iloc[-1]
 
-    # Create an array of historical average values for the length of the validation set
-    predictions = np.full_like(y_test, fill_value=historical_average)
+        # Create an array of moving average values for the length of the validation set
+        predictions = np.full_like(y_test, fill_value=last_window_average)
+
+        model_name = f'Moving Average (Window: {window})'
+    else:
+        # Calculate historical average
+        historical_average = y_train.mean()
+
+        # Create an array of historical average values for the length of the validation set
+        predictions = np.full_like(y_test, fill_value=historical_average)
+
+        model_name = 'Historical Average'
 
     # Calculate MAE
     mae = np.round(mean_absolute_error(y_test, predictions), 3)
 
-    # Plot reality vs prediction for the last week of the dataset
+    # Plot reality vs prediction
     fig = plt.figure(figsize=(16, 8))
-    plt.title(f'Real vs Prediction - MAE {mae}', fontsize=20)
+    plt.title(f'Real vs Prediction - {model_name} (MAE: {mae})', fontsize=20)
     plt.plot(y_test, color='red')
     plt.plot(pd.Series(predictions, index=y_test.index), color='green')
-    plt.xlabel('Month', fontsize=16)
-    plt.ylabel('Gas Demand', fontsize=16)
+    plt.xlabel('Date', fontsize=16)
+    plt.ylabel(target_var, fontsize=16)
     plt.legend(labels=['Real', 'Prediction'], fontsize=16)
     plt.grid()
     plt.show()
 
 
+
 import pandas as pd
 import matplotlib.pyplot as plt
 
-def average_forecast(df, start_date, end_date, target):
+def average_forecast(df, start_date, end_date, target, moving_avg_window=None):
     # Create a new DataFrame for the forecasted values
     forecast_df = pd.DataFrame(index=pd.date_range(start=start_date, end=end_date, freq='M'))
-    # Fill the forecast DataFrame with the average values
-    forecast_df['average'] = df[target].mean()
-    print("Forecasting: " + str(df[target].mean()) )
+
+    if moving_avg_window is None:
+        # Use historical average for the forecast
+        forecast_df['average'] = df[target].mean()
+        print("Forecasting using historical average:", df[target].mean())
+    else:
+        # Use moving average for the forecast
+        df['moving_avg'] = df[target].rolling(window=moving_avg_window, min_periods=1).mean()
+        forecast_df['average'] = df['moving_avg'].iloc[-1]
+        print(f"Forecasting using moving average with window={moving_avg_window}:", df['moving_avg'].iloc[-1])
+
     # Plot the original time series and the forecasted values
     plt.figure(figsize=(12, 6))
     plt.plot(df.index, df[target], label='Original')
@@ -953,6 +992,7 @@ def average_forecast(df, start_date, end_date, target):
     plt.show()
 
     return forecast_df
+
 
 
 def create_lagged_matrix(df, column, lag):
@@ -1009,7 +1049,7 @@ def train_time_series_with_linreg(X,y ,horizon=24*7):
     plt.title(f'Real vs Prediction - MAE {mae}', fontsize=20)
     plt.plot(y_test, color='red', marker='o')
     plt.plot(predictions, color='green', marker='o', linestyle='dashed')
-    plt.xlabel('Month', fontsize=16)
+    plt.xlabel('Days', fontsize=16)
     plt.ylabel('Gas Demand', fontsize=16)
     plt.legend(labels=['Real', 'Prediction'], fontsize=16)
     plt.grid()
@@ -1147,6 +1187,83 @@ def create_lagged_matrix_3(df, column, lag):
     #y = lagged_df.iloc[:, 0].values
     return lagged_df
 
+
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
+
+def find_optimal_lag(X, y, lag_values, test_size=0.2):
+    """
+    Find the optimal number of lag values for predicting a gas demand variable.
+
+    Args:
+        X (numpy.ndarray): Array containing the lagged values.
+        y (numpy.ndarray): Array containing the target variable.
+        lag_values (list): List of lag values to test.
+        test_size (float): Proportion of the data to use for validation (default: 0.2).
+
+    Returns:
+        int: Optimal number of lag values.
+
+    """
+    # Split the data into train and validation sets
+    split_index = int(len(X) * (1 - test_size))
+    X_train = X[:split_index]
+    y_train = y[:split_index]
+    X_val = X[split_index:]
+    y_val = y[split_index:]
+
+    # Initialize variables for storing performance metrics
+    metrics = []
+
+    # Iterate over the lag values
+    for lag in lag_values:
+        # Prepare X and y for training
+        X_train_lagged = X_train[:-lag]
+        y_train_lagged = y_train[lag:]
+        X_val_lagged = X_val[:-lag]
+        y_val_lagged = y_val[lag:]
+
+        # Train a linear regression model
+        model = LinearRegression()
+        model.fit(X_train_lagged, y_train_lagged)
+
+        # Make predictions on the validation set
+        y_pred = model.predict(X_val_lagged)
+
+        # Calculate the root mean squared error (RMSE)
+        rmse = np.sqrt(mean_squared_error(y_val_lagged, y_pred))
+
+        # Store the RMSE along with the lag value
+        metrics.append((lag, rmse))
+
+    # Plot the lag values vs RMSE
+    lag_values, rmse_values = zip(*metrics)
+    plt.plot(lag_values, rmse_values, 'bo-')
+    plt.xlabel('Number of Lag Values')
+    plt.ylabel('RMSE')
+    plt.title('Lag Values vs RMSE')
+    plt.grid(True)
+    plt.show()
+
+    # Find the lag value with the lowest RMSE
+    optimal_lag = min(metrics, key=lambda x: x[1])[0]
+    return optimal_lag
 
 
 
